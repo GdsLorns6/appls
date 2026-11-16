@@ -110,6 +110,7 @@ class ChunkCompressEngineTest {
 
         // Target chunk: 350 KB so 6 files split into at least 4 chunks
         val config = CompressionConfig(
+            archiveMode = ArchiveMode.CHUNKED_ZIPS,
             targetChunkBytes = 350 * 1024L,
             compressionLevel = 1,
             verifySha256 = true,
@@ -281,6 +282,7 @@ class ChunkCompressEngineTest {
 
         // 200 KB chunk size -> will split 600 KB file into 3 parts
         val config = CompressionConfig(
+            archiveMode = ArchiveMode.CHUNKED_ZIPS,
             targetChunkBytes = 200 * 1024L,
             verifySha256 = true,
             deleteSourceAfterVerified = false

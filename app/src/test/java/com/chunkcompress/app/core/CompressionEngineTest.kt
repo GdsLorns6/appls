@@ -69,6 +69,7 @@ class CompressionEngineTest {
 
         // Config: 512 KB target chunk size so it splits 8 files into multiple chunks
         val config = CompressionConfig(
+            archiveMode = ArchiveMode.CHUNKED_ZIPS,
             targetChunkBytes = 512 * 1024L,
             compressionLevel = 1,
             verifySha256 = true,

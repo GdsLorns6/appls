@@ -729,7 +729,7 @@ class CompressionEngine(
         ZipOutputStream(BufferedOutputStream(FileOutputStream(tempZipFile), config.bufferSizeBytes), StandardCharsets.UTF_8).use { zos ->
             zos.setLevel(config.compressionLevel)
 
-            for ((fileIndex, item) in candidateFiles.withIndex()) {
+            for ((_, item) in candidateFiles.withIndex()) {
                 checkActive()
 
                 while (isPaused && !isCancelled) {
