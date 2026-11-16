@@ -744,7 +744,11 @@ class CompressionEngine(
                         val msg = "Critically low disk storage (${StorageUtils.formatBytes(freeNow)} available). Pausing to prevent disk exhaustion!"
                         addLog(msg, LogLevel.WARNING)
                         emitProgress(
-                            state = EngineState.PausedStorage,
+                            state = EngineState.PausedLowStorage(
+                                currentFreeBytes = freeNow,
+                                requiredBufferBytes = config.emergencyReserveBytes,
+                                message = msg
+                            ),
                             currentFileName = item.relativePath,
                             speed = 0L
                         )
