@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">ChunkCompress</string>
+    <string name="service_notification_title">ChunkCompress Engine</string>
+    <string name="service_notification_desc">Compressing folder safely...</string>
+    <string name="channel_name">Compression Tasks</string>
+    <string name="channel_desc">Shows progress of ongoing compression and extraction tasks</string>
+</resources>
