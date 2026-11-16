@@ -13,6 +13,7 @@ import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.chunkcompress.app.MainActivity
 import com.chunkcompress.app.R
+import com.chunkcompress.app.core.ArchiveMode
 import com.chunkcompress.app.core.CompressionConfig
 import com.chunkcompress.app.core.CompressionEngine
 import com.chunkcompress.app.core.ConflictStrategy
