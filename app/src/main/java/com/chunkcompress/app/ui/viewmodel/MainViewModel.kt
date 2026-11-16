@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Environment
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.chunkcompress.app.core.ArchiveMode
 import com.chunkcompress.app.core.CompressionConfig
 import com.chunkcompress.app.core.CompressionEngine
 import com.chunkcompress.app.core.ConflictStrategy
@@ -51,10 +52,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val destinationDirectory: StateFlow<File?> = _destinationDirectory.asStateFlow()
 
     // Compression options
-    private val _chunkSizeBytes = MutableStateFlow(1024L * 1024L * 1024L) // 1 GB default
+    private val _archiveMode = MutableStateFlow(ArchiveMode.SINGLE_ZIP) // Single Complete ZIP default!
+    val archiveMode: StateFlow<ArchiveMode> = _archiveMode.asStateFlow()
+
+    private val _chunkSizeBytes = MutableStateFlow(1024L * 1024L * 1024L) // 1 GB default (for chunked mode)
     val chunkSizeBytes: StateFlow<Long> = _chunkSizeBytes.asStateFlow()
 
-    private val _compressionLevel = MutableStateFlow(6) // 0=Store, 1=Fast, 6=Balanced, 9=Max
+    private val _compressionLevel = MutableStateFlow(1) // 0=Store, 1=Fast (default), 6=Balanced, 9=Max
     val compressionLevel: StateFlow<Int> = _compressionLevel.asStateFlow()
 
     private val _verifySha256 = MutableStateFlow(true)
@@ -162,6 +166,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         runPreFlightInspection()
     }
 
+    fun setArchiveMode(mode: ArchiveMode) {
+        _archiveMode.value = mode
+        runPreFlightInspection()
+    }
+
     fun setChunkSize(bytes: Long) {
         _chunkSizeBytes.value = bytes
         runPreFlightInspection()
@@ -222,6 +231,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val report = withContext(Dispatchers.IO) {
                 val config = CompressionConfig(
+                    archiveMode = _archiveMode.value,
                     targetChunkBytes = _chunkSizeBytes.value,
                     compressionLevel = _compressionLevel.value,
                     verifySha256 = _verifySha256.value,
@@ -241,6 +251,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val intent = Intent(getApplication(), CompressionService::class.java).apply {
             action = CompressionService.ACTION_START_COMPRESS
+            putExtra(CompressionService.EXTRA_ARCHIVE_MODE, _archiveMode.value.name)
             putExtra(CompressionService.EXTRA_SOURCE_PATH, source.absolutePath)
             putExtra(CompressionService.EXTRA_DEST_PATH, dest.absolutePath)
             putExtra(CompressionService.EXTRA_CHUNK_SIZE, _chunkSizeBytes.value)

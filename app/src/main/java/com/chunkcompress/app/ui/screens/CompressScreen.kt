@@ -17,6 +17,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.chunkcompress.app.core.ArchiveMode
 import com.chunkcompress.app.core.StorageUtils
 import com.chunkcompress.app.ui.components.FolderSelectorRow
 import com.chunkcompress.app.ui.theme.*
@@ -29,6 +30,7 @@ fun CompressScreen(
     onPickDestFolder: () -> Unit,
     onStartCompression: () -> Unit
 ) {
+    val archiveMode by viewModel.archiveMode.collectAsState()
     val freeSpace by viewModel.freeDiskSpace.collectAsState()
     val sourceDir by viewModel.sourceDirectory.collectAsState()
     val sourceStats by viewModel.sourceFolderStats.collectAsState()
@@ -115,7 +117,7 @@ fun CompressScreen(
             }
         }
 
-        // 2. Chunk Target Size & Auto Recommendation
+        // 2. Output Archive Format
         Card(
             colors = CardDefaults.cardColors(containerColor = DarkSurface),
             shape = RoundedCornerShape(16.dp),
@@ -125,64 +127,127 @@ fun CompressScreen(
                 modifier = Modifier.padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "2. Chunk Target Size",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = TextPrimary,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = StorageUtils.formatBytes(chunkSize),
-                        style = MaterialTheme.typography.titleMedium,
-                        color = AccentCyan,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-
                 Text(
-                    text = "Files are batched up to this size. When source deletion is enabled, storage is reclaimed after each verified chunk.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
+                    text = "2. Archive Output Format",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
                 )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    val presets = listOf(
-                        Pair("500 MB", 500L * 1024 * 1024),
-                        Pair("1 GB", 1024L * 1024 * 1024),
-                        Pair("2 GB", 2048L * 1024 * 1024),
-                        Pair("5 GB", 5120L * 1024 * 1024)
-                    )
-                    presets.forEach { (label, bytes) ->
-                        val selected = chunkSize == bytes
-                        FilterChip(
-                            selected = selected,
-                            onClick = { viewModel.setChunkSize(bytes) },
-                            label = { Text(label, fontSize = 12.sp) },
-                            colors = FilterChipDefaults.filterChipColors(
-                                selectedContainerColor = PrimaryBlue,
-                                selectedLabelColor = Color.White,
-                                containerColor = DarkSurfaceVariant,
-                                labelColor = TextSecondary
-                            )
+                    FilterChip(
+                        selected = archiveMode == ArchiveMode.SINGLE_ZIP,
+                        onClick = { viewModel.setArchiveMode(ArchiveMode.SINGLE_ZIP) },
+                        label = { Text("Single Complete ZIP (.zip)", fontWeight = FontWeight.Bold, fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryBlue,
+                            selectedLabelColor = Color.White,
+                            containerColor = DarkSurfaceVariant,
+                            labelColor = TextSecondary
                         )
-                    }
+                    )
+                    FilterChip(
+                        selected = archiveMode == ArchiveMode.CHUNKED_ZIPS,
+                        onClick = { viewModel.setArchiveMode(ArchiveMode.CHUNKED_ZIPS) },
+                        label = { Text("Multi-Part Chunks", fontSize = 12.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = PrimaryBlue,
+                            selectedLabelColor = Color.White,
+                            containerColor = DarkSurfaceVariant,
+                            labelColor = TextSecondary
+                        )
+                    )
                 }
 
-                OutlinedButton(
-                    onClick = { viewModel.autoRecommendChunkSize() },
-                    modifier = Modifier.fillMaxWidth()
+                if (archiveMode == ArchiveMode.SINGLE_ZIP) {
+                    Text(
+                        text = "⭐ Recommended: Creates ONE complete .zip game file. When Space Reclamation is enabled below, original files are deleted as they are archived to continuously recycle storage. Ready to copy to PC and play directly!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AccentCyan
+                    )
+                } else {
+                    Text(
+                        text = "Splits archive into chunk_001.zip, chunk_002.zip files. Includes 1-click PC extraction scripts.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TextSecondary
+                    )
+                }
+            }
+        }
+
+        // 3. Chunk Target Size (Active in Multi-Part Chunk Mode)
+        if (archiveMode == ArchiveMode.CHUNKED_ZIPS) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Auto-Recommend Based on Free Space")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "3. Chunk Target Size",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = TextPrimary,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            text = StorageUtils.formatBytes(chunkSize),
+                            style = MaterialTheme.typography.titleMedium,
+                            color = AccentCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Text(
+                        text = "Files are batched up to this size. When source deletion is enabled, storage is reclaimed after each verified chunk.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val presets = listOf(
+                            Pair("500 MB", 500L * 1024 * 1024),
+                            Pair("1 GB", 1024L * 1024 * 1024),
+                            Pair("2 GB", 2048L * 1024 * 1024),
+                            Pair("5 GB", 5120L * 1024 * 1024)
+                        )
+                        presets.forEach { (label, bytes) ->
+                            val selected = chunkSize == bytes
+                            FilterChip(
+                                selected = selected,
+                                onClick = { viewModel.setChunkSize(bytes) },
+                                label = { Text(label, fontSize = 12.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = PrimaryBlue,
+                                    selectedLabelColor = Color.White,
+                                    containerColor = DarkSurfaceVariant,
+                                    labelColor = TextSecondary
+                                )
+                            )
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.autoRecommendChunkSize() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = AccentCyan, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Auto-Recommend Based on Free Space")
+                    }
                 }
             }
         }

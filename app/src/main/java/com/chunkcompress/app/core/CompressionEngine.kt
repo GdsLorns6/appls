@@ -261,6 +261,7 @@ class CompressionEngine(
             .forEach { file ->
                 if (config.excludeHiddenFiles && file.name.startsWith(".")) return@forEach
                 if (config.excludeEmptyFiles && file.length() == 0L) return@forEach
+                if (file.name.endsWith(".tmp") || file.name.endsWith(".bak") || file.name.startsWith("manifest.json")) return@forEach
                 if (config.excludedExtensions.isNotEmpty()) {
                     val ext = file.extension.lowercase()
                     if (config.excludedExtensions.contains(ext)) return@forEach
@@ -305,7 +306,20 @@ class CompressionEngine(
             return@withContext manifest
         }
 
-        // 3. Plan chunks for remaining files
+        // 3. Check Archive Output Mode: Single Complete ZIP vs Multi-Volume Chunks
+        if (config.archiveMode == ArchiveMode.SINGLE_ZIP) {
+            return@withContext compressSingleZip(
+                sourceFolder = sourceFolder,
+                outputDir = outputDir,
+                candidateFiles = candidateFiles,
+                manifest = manifest,
+                scannedBytes = scannedBytes,
+                config = config,
+                engineStartTime = engineStartTime
+            )
+        }
+
+        // 4. Plan chunks for remaining files (Multi-Volume Chunk Mode)
         val plannedChunks = planChunks(candidateFiles, config.targetChunkBytes)
         val chunkOffset = manifest.chunks.size
         val totalExpectedChunks = chunkOffset + plannedChunks.size
@@ -664,6 +678,208 @@ class CompressionEngine(
         )
 
         return@withContext manifest
+    }
+
+    /**
+     * Creates ONE single complete .zip archive (e.g. MyGame.zip), recycling disk space in real-time
+     * by deleting original source files as they are safely written into the zip stream.
+     */
+    private suspend fun compressSingleZip(
+        sourceFolder: File,
+        outputDir: File,
+        candidateFiles: List<FileItem>,
+        manifest: ChunkManifest,
+        scannedBytes: Long,
+        config: CompressionConfig,
+        engineStartTime: Long
+    ): ChunkManifest {
+        val totalFiles = candidateFiles.size
+        val totalBytes = scannedBytes
+        val targetZipName = if (config.singleZipFileName.isNotBlank()) config.singleZipFileName else "${sourceFolder.name}.zip"
+        val targetZipFile = File(outputDir, targetZipName)
+        val tempZipFile = File(outputDir, "$targetZipName.tmp")
+
+        if (tempZipFile.exists()) tempZipFile.delete()
+
+        addLog("=== Single Complete ZIP Mode ===")
+        addLog("Target Archive: $targetZipName for $totalFiles files (${StorageUtils.formatBytes(totalBytes)})")
+        addLog("Real-Time Storage Recycling: ${if (config.deleteSourceAfterVerified) "ENABLED (Originals deleted as archived)" else "DISABLED (Originals preserved)"}")
+
+        emitProgress(
+            state = EngineState.Planning(1),
+            totalChunks = 1,
+            currentChunkIndex = 1
+        )
+
+        val chunkInfo = ChunkInfo(
+            chunkIndex = 1,
+            archiveFileName = targetZipName,
+            totalUncompressedBytes = totalBytes,
+            fileCount = totalFiles
+        )
+
+        var speedStartTime = System.currentTimeMillis()
+        var bytesSinceSpeedCheck = 0L
+        var currentSpeed = 0L
+        var writeCounter = 0
+        var totalBytesProcessed = 0L
+        var bytesReclaimed = 0L
+        val processedEntries = mutableListOf<ManifestFileEntry>()
+
+        ZipOutputStream(BufferedOutputStream(FileOutputStream(tempZipFile), config.bufferSizeBytes), StandardCharsets.UTF_8).use { zos ->
+            zos.setLevel(config.compressionLevel)
+
+            for ((fileIndex, item) in candidateFiles.withIndex()) {
+                checkActive()
+
+                while (isPaused && !isCancelled) {
+                    Thread.sleep(200)
+                }
+
+                // Storage guard check
+                writeCounter++
+                if (writeCounter % 20 == 0) {
+                    val freeNow = StorageUtils.getAvailableFreeSpaceBytes(outputDir)
+                    if (freeNow < config.emergencyReserveBytes) {
+                        val msg = "Critically low disk storage (${StorageUtils.formatBytes(freeNow)} available). Pausing to prevent disk exhaustion!"
+                        addLog(msg, LogLevel.WARNING)
+                        emitProgress(
+                            state = EngineState.PausedStorage,
+                            currentFileName = item.relativePath,
+                            speed = 0L
+                        )
+                        isPaused = true
+                        while (isPaused && !isCancelled) {
+                            Thread.sleep(1500)
+                            if (StorageUtils.getAvailableFreeSpaceBytes(outputDir) >= config.emergencyReserveBytes) {
+                                isPaused = false
+                                addLog("Storage space restored! Resuming compression...", LogLevel.INFO)
+                            }
+                        }
+                    }
+                }
+
+                val sourceFile = item.file
+                val relPath = item.relativePath
+                val initialSnapshot = Pair(sourceFile.lastModified(), sourceFile.length())
+
+                emitProgress(
+                    state = EngineState.Compressing(
+                        chunkIndex = 1,
+                        totalChunks = 1,
+                        currentFileName = relPath,
+                        chunkBytesProcessed = totalBytesProcessed,
+                        chunkBytesTotal = totalBytes
+                    ),
+                    currentChunkIndex = 1,
+                    totalChunks = 1,
+                    currentFileName = relPath,
+                    chunkProgress = if (totalBytes > 0) totalBytesProcessed.toFloat() / totalBytes else 0f,
+                    totalProgress = if (totalBytes > 0) totalBytesProcessed.toFloat() / totalBytes else 0f,
+                    speed = currentSpeed
+                )
+
+                val entry = ZipEntry(relPath)
+                entry.time = item.lastModified
+                zos.putNextEntry(entry)
+
+                val digest = MessageDigest.getInstance("SHA-256")
+                if (sourceFile.length() > 0) {
+                    BufferedInputStream(FileInputStream(sourceFile), config.bufferSizeBytes).use { bis ->
+                        val buffer = ByteArray(config.bufferSizeBytes)
+                        var read: Int
+                        while (bis.read(buffer).also { read = it } != -1) {
+                            checkActive()
+                            zos.write(buffer, 0, read)
+                            digest.update(buffer, 0, read)
+                            totalBytesProcessed += read
+                            bytesSinceSpeedCheck += read
+
+                            val now = System.currentTimeMillis()
+                            if (now - speedStartTime >= 1000) {
+                                currentSpeed = (bytesSinceSpeedCheck * 1000) / (now - speedStartTime)
+                                speedStartTime = now
+                                bytesSinceSpeedCheck = 0L
+                            }
+                        }
+                    }
+                }
+                zos.closeEntry()
+                zos.flush()
+
+                val hash = HashUtils.bytesToHex(digest.digest())
+                val entryRecord = ManifestFileEntry(
+                    relativePath = relPath,
+                    originalSize = item.size,
+                    sha256 = hash,
+                    lastModified = item.lastModified,
+                    status = FileProcessStatus.ARCHIVED,
+                    isSplit = false
+                )
+
+                // Safe Deletion Pass: In-place storage reclamation
+                if (config.deleteSourceAfterVerified) {
+                    val hasChanged = sourceFile.lastModified() != initialSnapshot.first ||
+                            sourceFile.length() != initialSnapshot.second
+                    if (hasChanged) {
+                        addLog("File modified during archiving, keeping source: $relPath", LogLevel.WARNING)
+                        entryRecord.status = FileProcessStatus.MODIFIED_SKIPPED
+                    } else {
+                        val len = sourceFile.length()
+                        if (sourceFile.exists() && sourceFile.delete()) {
+                            bytesReclaimed += len
+                            entryRecord.status = FileProcessStatus.DELETED
+                            entryRecord.deletedAt = System.currentTimeMillis()
+                            addLog("Safely archived & reclaimed: ${sourceFile.name} (${StorageUtils.formatBytes(len)})")
+                        } else {
+                            entryRecord.status = FileProcessStatus.FAILED
+                            addLog("Could not delete source file: $relPath", LogLevel.WARNING)
+                        }
+                    }
+                }
+
+                processedEntries.add(entryRecord)
+            }
+        }
+
+        cleanEmptyDirectories(sourceFolder)
+
+        // Finalize Zip File
+        if (targetZipFile.exists()) targetZipFile.delete()
+        if (!tempZipFile.renameTo(targetZipFile)) {
+            tempZipFile.copyTo(targetZipFile, overwrite = true)
+            tempZipFile.delete()
+        }
+
+        chunkInfo.archiveSizeBytes = targetZipFile.length()
+        chunkInfo.files.addAll(processedEntries)
+        chunkInfo.isVerified = true
+        chunkInfo.verifiedAt = System.currentTimeMillis()
+        manifest.chunks.add(chunkInfo)
+        manifest.isCompleted = true
+
+        ManifestManager.saveManifest(manifest, outputDir)
+
+        val totalTime = System.currentTimeMillis() - engineStartTime
+        addLog(
+            "Single Complete ZIP created successfully: $targetZipName (${StorageUtils.formatBytes(chunkInfo.archiveSizeBytes)})! Total Reclaimed: ${StorageUtils.formatBytes(bytesReclaimed)}",
+            LogLevel.SUCCESS
+        )
+
+        emitProgress(
+            state = EngineState.Completed(
+                totalChunks = 1,
+                totalOriginalBytes = totalBytes,
+                totalReclaimedBytes = bytesReclaimed,
+                timeTakenMs = totalTime
+            ),
+            currentChunkIndex = 1,
+            totalChunks = 1,
+            totalProgress = 1f,
+            chunkProgress = 1f
+        )
+
+        return manifest
     }
 
     private fun checkActive() {

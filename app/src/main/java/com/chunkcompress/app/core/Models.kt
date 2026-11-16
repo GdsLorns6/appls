@@ -95,11 +95,21 @@ data class PreFlightReport(
 )
 
 /**
+ * Archive output mode: Single Complete ZIP or Multi-Volume Chunks
+ */
+enum class ArchiveMode {
+    SINGLE_ZIP,     // Produces 1 single complete .zip file, continuously recycling storage
+    CHUNKED_ZIPS    // Produces chunk_001.zip, chunk_002.zip... for multi-volume splitting
+}
+
+/**
  * Configuration for the compression engine.
  */
 data class CompressionConfig(
-    val targetChunkBytes: Long = 1024L * 1024L * 1024L, // 1 GB default
-    val compressionLevel: Int = 6, // 0 = Store, 1 = Fast, 6 = Balanced, 9 = Maximum
+    val archiveMode: ArchiveMode = ArchiveMode.SINGLE_ZIP, // Default to single complete ZIP!
+    val singleZipFileName: String = "", // Custom name or defaults to [FolderName].zip
+    val targetChunkBytes: Long = 1024L * 1024L * 1024L, // 1 GB default (for chunked mode)
+    val compressionLevel: Int = 1, // 0 = Store, 1 = Fast, 6 = Balanced, 9 = Maximum (default Fast)
     val verifySha256: Boolean = true, // Mandatory for safe deletion
     val deleteSourceAfterVerified: Boolean = false, // CRITICAL: DISABLED BY DEFAULT FOR DATA SAFETY
     val bufferSizeBytes: Int = 256 * 1024, // 256 KB high-throughput buffer

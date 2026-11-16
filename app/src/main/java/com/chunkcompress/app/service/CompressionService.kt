@@ -57,6 +57,7 @@ class CompressionService : Service() {
         const val ACTION_RESUME = "ACTION_RESUME"
         const val ACTION_CANCEL = "ACTION_CANCEL"
 
+        const val EXTRA_ARCHIVE_MODE = "EXTRA_ARCHIVE_MODE"
         const val EXTRA_SOURCE_PATH = "EXTRA_SOURCE_PATH"
         const val EXTRA_DEST_PATH = "EXTRA_DEST_PATH"
         const val EXTRA_CHUNK_SIZE = "EXTRA_CHUNK_SIZE"
@@ -116,13 +117,15 @@ class CompressionService : Service() {
             ACTION_START_COMPRESS -> {
                 val sourcePath = intent.getStringExtra(EXTRA_SOURCE_PATH) ?: return START_NOT_STICKY
                 val destPath = intent.getStringExtra(EXTRA_DEST_PATH) ?: return START_NOT_STICKY
+                val modeName = intent.getStringExtra(EXTRA_ARCHIVE_MODE) ?: ArchiveMode.SINGLE_ZIP.name
+                val archiveMode = try { ArchiveMode.valueOf(modeName) } catch (e: Exception) { ArchiveMode.SINGLE_ZIP }
                 val chunkSize = intent.getLongExtra(EXTRA_CHUNK_SIZE, 1024L * 1024 * 1024)
-                val compLevel = intent.getIntExtra(EXTRA_COMPRESSION_LEVEL, 6)
+                val compLevel = intent.getIntExtra(EXTRA_COMPRESSION_LEVEL, 1)
                 val verifySha = intent.getBooleanExtra(EXTRA_VERIFY_SHA256, true)
                 val deleteSource = intent.getBooleanExtra(EXTRA_DELETE_SOURCE, false)
                 val reserveBytes = intent.getLongExtra(EXTRA_EMERGENCY_RESERVE, 300L * 1024 * 1024)
 
-                startCompression(File(sourcePath), File(destPath), chunkSize, compLevel, verifySha, deleteSource, reserveBytes)
+                startCompression(File(sourcePath), File(destPath), archiveMode, chunkSize, compLevel, verifySha, deleteSource, reserveBytes)
             }
             ACTION_START_DECOMPRESS -> {
                 val sourcePath = intent.getStringExtra(EXTRA_SOURCE_PATH) ?: return START_NOT_STICKY
@@ -155,6 +158,7 @@ class CompressionService : Service() {
     private fun startCompression(
         source: File,
         dest: File,
+        archiveMode: ArchiveMode,
         chunkSize: Long,
         level: Int,
         verifySha: Boolean,
@@ -169,6 +173,7 @@ class CompressionService : Service() {
             operationMutex.withLock {
                 try {
                     val config = CompressionConfig(
+                        archiveMode = archiveMode,
                         targetChunkBytes = chunkSize,
                         compressionLevel = level,
                         verifySha256 = verifySha,
