@@ -352,3 +352,37 @@ fun formatDuration(ms: Long): String {
         String.format("%02dm %02ds", minutes, seconds)
     }
 }
+
+@Composable
+fun MetricCard(
+    title: String,
+    value: String,
+    color: Color,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = modifier
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(text = title, style = MaterialTheme.typography.bodyMedium, color = TextSecondary, fontSize = 11.sp)
+            }
+            Text(
+                text = value,
+                style = MaterialTheme.typography.titleMedium,
+                color = color,
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                maxLines = 1
+            )
+        }
+    }
+}

@@ -18,6 +18,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.chunkcompress.app.core.StorageUtils
+import com.chunkcompress.app.ui.components.FolderSelectorRow
 import com.chunkcompress.app.ui.theme.*
 import com.chunkcompress.app.ui.viewmodel.MainViewModel
 
